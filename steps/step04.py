@@ -40,6 +40,7 @@ def numerical_diff(f, x, eps=1e-4):
 f = Square()
 x = Variable(np.array(2.0))
 dy = numerical_diff(f, x)
+print(type(dy)) # dy의 클래스는 numpy 
 print(dy)
 
 
