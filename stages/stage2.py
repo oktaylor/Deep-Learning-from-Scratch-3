@@ -5,7 +5,7 @@ import contextlib
 class Config:
     enable_backprop = True
 
-@contextlib.contextmanager
+@contextlib.contextmanager # 18단계
 def using_config(name, value):
     old_value = getattr(Config, name)
     setattr(Config, name, value)
@@ -16,6 +16,8 @@ def using_config(name, value):
 
 
 class Variable:
+    __array_priority__ = 200 # 21단계 : 연산자 우선순위
+
     def __init__(self, data, name=None): # 서로 다른 변수들을 구분하기 위해 이름을 붙여주자
         if data is not None:
             if not isinstance(data, np.ndarray):
@@ -35,6 +37,9 @@ class Variable:
             return 'variable(None)'
         p = str(self.data).replace('\n', '\n' + ' ' * 9)
         return 'variable(' + p + ')'
+    
+    # def __mul__(self, other):
+    #     return mul(self, other) # 연산자 오버로드
 
     def set_creator(self, func): # func : 이전 계산 그래프 노드와 현재 노드를 연결하는 함수(Function)를 의미
         self.creator = func
@@ -91,12 +96,10 @@ class Variable:
     @property
     def dtype(self):
         return self.data.dtype
-    
 
 
 def no_grad():
     return using_config('enable_backprop', False)
-
 
 
 def as_array(x): # 0차원 ndarray를 받았을 때(결과 dtype이 float임) 대처 방법
@@ -105,9 +108,17 @@ def as_array(x): # 0차원 ndarray를 받았을 때(결과 dtype이 float임) �
     return x
 
 
+def as_variable(obj): # np.array와 같은 객체를 받았을 때 계산을 잘 할 수 있도록 Variable 인스턴스로 바꿔줌
+    if isinstance(obj, Variable):
+        return obj
+    return Variable(obj)
+
+
 class Function:
     # def __call__(self, inputs):
     def __call__(self, *inputs):
+        inputs = [as_variable(x) for x in inputs]
+
         xs = [x.data for x in inputs]
         # ys = self.forward(xs)
         ys = self.forward(*xs)
@@ -115,7 +126,7 @@ class Function:
             ys = (ys,) # 튜플이 아니면 튜플로 만들어주세요
         outputs = [Variable(as_array(y)) for y in ys]
 
-        if Config.enable_backprop:
+        if Config.enable_backprop: # 18단계
             self.generation = max([x.generation for x in inputs])
             for output in outputs:
                 output.set_creator(self) # output의 생성자들 다 갖고옴
@@ -157,6 +168,17 @@ class Add(Function):
     
     def backward(self, gy):
         return gy, gy
+    
+
+class Mul(Function):
+    def forward(self, x0, x1):
+        y = x0 * x1
+        return y
+    
+    def backward(self, gy):
+        x0, x1 = self.inputs[0].data, self.inputs[1].data
+        return gy * x1, gy * x0
+
 
 
 def square(x):
@@ -170,9 +192,18 @@ def exp(x):
 
 
 def add(x0, x1):
+    x1 = as_array(x1) # x + 3.0 같은거 계산할라고 3.0 + x는 안될 것 같았는데 그건 __radd__를 추가해줘서 해결함
     return Add()(x0, x1)
 
 
+def mul(x0, x1):
+    x1 = as_array(x1)
+    return Mul()(x0, x1)
+
+Variable.__mul__ = mul
+Variable.__rmul__ = mul
+Variable.__add__ = add
+Variable.__radd__ = add
 
 
 
@@ -180,8 +211,11 @@ def add(x0, x1):
 
 
 
-x = Variable(np.array([[1, 2, 3], [4, 5, 6]]))
-x.name = 'x'
 
-print(x.name)
-print(x.shape)
+
+
+
+x = Variable(np.array(2.0))
+
+y = x * 3.0
+print(y)
